@@ -124,14 +124,14 @@ content: Buffer.from(status, 'utf-8')
 return status
 }
 
-ZassTdr.public = true
+ZassTdr.public = false
 
 ZassTdr.serializeM = (m) => smsg(ZassTdr, m, store)
 
 ZassTdr.ev.on('connection.update', (update) => {
 const {connection,lastDisconnect} = update
 if (connection === 'close') {lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut ? startZassTdr() : ''}
-else if(connection === 'open') {ZassTdr.sendMessage("6289688206739@s.whatsapp.net", {text:`${JSON.stringify(update, undefined, 2)}`})}
+else if(connection === 'open') {ZassTdr.sendMessage("628900000000000@s.whatsapp.net", {text:`${JSON.stringify(update, undefined, 2)}`})}
 console.log(update)})
 
 ZassTdr.send5ButGif = async (jid , text = '' , footer = '', but = [], options = {}) =>{
