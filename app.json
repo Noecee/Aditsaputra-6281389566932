@@ -1,0 +1,12 @@
+{
+  "name": "wilyy",
+  "description": "s",
+  "repository": "https://github.com/Noecee/Aditsaputra-6281389566932",
+  "logo": "https://pbs.twimg.com/media/FO7fojOakAAyYgt?format=jpg&name=900x900",
+  "keywords": ["nodejs", "bot", "whatsapp bot", "whatsapp automation", "multi device"],
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ]
+}
