@@ -1,6 +1,5 @@
 require('./zass')
-const { default: makeWASocket, AnyMessageContent, useMultiFileAuthState, makeCacheableSignalKeyStore, delay, DisconnectReason, fetchLatestBaileysVersion, generateForwardMessageContent, prepareWAMessageMedia, MessageType, MessageOptions, Mimetype, generateWAMessageFromContent, generateMessageID, downloadContentFromMessage, makeInMemoryStore, jidDecode, jidNormalizedUser, proto } = require('baileys')
-//const { state } = useSingleFileAuthState(`./${sessionName}.json`)
+const { default: ZassTdrConnect, delay, PHONENUMBER_MCC, makeCacheableSignalKeyStore, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, generateForwardMessageContent, prepareWAMessageMedia, generateWAMessageFromContent, generateMessageID, downloadContentFromMessage, makeInMemoryStore, jidDecode, proto, getAggregateVotesInPollMessage, getContentType } = require("@whiskeysockets/baileys")
 const pino = require('pino')
 const { Boom } = require('@hapi/boom')
 const fs = require('fs')
@@ -8,44 +7,95 @@ const chalk = require('chalk')
 const figlet = require('figlet')
 const FileType = require('file-type')
 const path = require('path')
+const NodeCache = require("node-cache")
+const Pino = require("pino")
+const readline = require("readline")
 const PhoneNumber = require('awesome-phonenumber')
+const makeWASocket = require("@whiskeysockets/baileys").default
+
+let phoneNumber = "6272139672290"
+let owner = "6282139672280"
 
 const store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) })
+
+const pairingCode = !!phoneNumber || process.argv.includes("--pairing-code")
+const useMobile = process.argv.includes("--mobile")
+
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+const question = (text) => new Promise((resolve) => rl.question(text, resolve))
 
 
 async function startZassTdr() {
 const { state, saveCreds } = await useMultiFileAuthState(global.sessionName)
 let { version, isLatest } = await fetchLatestBaileysVersion()
+const msgRetryCounterCache = new NodeCache()
 const ZassTdr = makeWASocket({
-logger: pino({ level: 'silent' }),
-printQRInTerminal: true,
-patchMessageBeforeSending: (message) => {
-const requiresPatch = !!(
-  message.buttonsMessage
-  || message.templateMessage
-  || message.listMessage
-  );
-if (requiresPatch) {
-  message = {
- viewOnceMessage: {
-message: {
-  messageContextInfo: {
-deviceListMetadataVersion: 2,
-deviceListMetadata: {},
-  },
-...message,
-},
- },
-  };
-}
-  return message;
-},
-browser: ['ZassTdr','Chrome','3.0.0'],
-auth: state,
-version
-})
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: !pairingCode, // popping up QR in terminal log
+      mobile: useMobile, // mobile api (prone to bans)
+      browser: ['Chrome (Linux)', '', ''], // for this issues https://github.com/WhiskeySockets/Baileys/issues/328
+     auth: {
+         creds: state.creds,
+         keys: makeCacheableSignalKeyStore(state.keys, Pino({ level: "fatal" }).child({ level: "fatal" })),
+      },
+      browser: ['Chrome (Linux)', '', ''], // for this issues https://github.com/WhiskeySockets/Baileys/issues/328
+      markOnlineOnConnect: true, // set false for offline
+      generateHighQualityLinkPreview: true, // make high preview link
+      getMessage: async (key) => {
+         let jid = jidNormalizedUser(key.remoteJid)
+         let msg = await store.loadMessage(jid, key.id)
+
+         return msg?.message || ""
+      },
+      msgRetryCounterCache, // Resolve waiting messages
+      defaultQueryTimeoutMs: undefined, // for this issues https://github.com/WhiskeySockets/Baileys/issues/276
+   })
 
 store.bind(ZassTdr.ev)
+
+if (pairingCode && !ZassTdr.authState.creds.registered) {
+      if (useMobile) throw new Error('Cannot use pairing code with mobile api')
+
+      let phoneNumber
+      if (!!phoneNumber) {
+         phoneNumber = phoneNumber.replace(/[^0-9]/g, '')
+
+         if (!Object.keys(PHONENUMBER_MCC).some(v => phoneNumber.startsWith(v))) {
+            console.log(chalk.bgBlack(chalk.redBright("Start with country code of your WhatsApp Number, Example : +6282139672290")))
+            process.exit(0)
+         }
+      } else {
+         phoneNumber = await question(chalk.bgBlack(chalk.greenBright(`Please type your WhatsApp number 😍\nFor example: +6282139672290 : `)))
+         phoneNumber = phoneNumber.replace(/[^0-9]/g, '')
+
+         // Ask again when entering the wrong number
+         if (!Object.keys(PHONENUMBER_MCC).some(v => phoneNumber.startsWith(v))) {
+            console.log(chalk.bgBlack(chalk.redBright("Start with country code of your WhatsApp Number, Example : +6282139672290")))
+
+            phoneNumber = await question(chalk.bgBlack(chalk.greenBright(`Please type your WhatsApp number 😍\nFor example: +6282139672290 : `)))
+            phoneNumber = phoneNumber.replace(/[^0-9]/g, '')
+            rl.close()
+         }
+      }
+
+      setTimeout(async () => {
+         let code = await ZassTdr.requestPairingCode(phoneNumber)
+         code = code?.match(/.{1,4}/g)?.join("-") || code
+         console.log(chalk.black(chalk.bgGreen(`Your Pairing Code : `)), chalk.black(chalk.white(code)))
+      }, 3000)
+   }
+
+
+ // anticall auto block
+    ZassTdr.ws.on('CB:call', async (json) => {
+    const callerId = json.content[0].attrs['call-creator']
+    if (json.content[0].tag == 'offer') {
+    ZassTdr.sendMessage(callerId, { text: `*Sistem otomatis block!*\n*Jangan menelpon bot*!\n*Silahkan Hubungi Owner Untuk Dibuka !*`}, { quoted : pa7rick })
+        let pa7rick = await ZassTdr.sendContact(callerId, global.owner)
+    await sleep(8000)
+    await ZassTdr.updateBlockStatus(callerId, "block")
+    }
+    })
     
 ZassTdr.ev.process(
 async (events) => {
@@ -124,7 +174,7 @@ content: Buffer.from(status, 'utf-8')
 return status
 }
 
-ZassTdr.public = false
+ZassTdr.public = true
 
 ZassTdr.serializeM = (m) => smsg(ZassTdr, m, store)
 
